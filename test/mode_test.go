@@ -1,7 +1,7 @@
 package test
 
 import (
-	"common"
+	"github.com/r3inbowari/common"
 	"testing"
 )
 
