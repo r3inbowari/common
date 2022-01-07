@@ -3,7 +3,6 @@ module github.com/r3inbowari/common
 go 1.16
 
 require (
-	github.com/Dreamacro/clash v1.9.0
 	github.com/google/uuid v1.3.0
 	github.com/klauspost/cpuid/v2 v2.0.9
 	github.com/mitchellh/mapstructure v1.4.3
@@ -15,5 +14,4 @@ require (
 require (
 	github.com/go-sql-driver/mysql v1.6.0
 	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f
-	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 )
