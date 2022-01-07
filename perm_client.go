@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -16,7 +17,7 @@ import (
 
 type Perm struct {
 	PermOptions
-	ID       string
+	MID      string
 	IsExpire bool
 }
 
@@ -41,8 +42,11 @@ func InitPermClient(opt PermOptions) *Perm {
 		perm.Log.WithField("default", perm.AppId).Warn("[PERM] appid not set")
 
 	}
+	if opt.ExpireAfter == 0 {
+		perm.ExpireAfter = time.Hour * 720
+	}
 	perm.Log.Info("[PERM] plugins loaded")
-	perm.ID = GetID(perm.AppId)
+	perm.MID = GetID(perm.AppId)
 	return &perm
 }
 
@@ -53,17 +57,38 @@ func (p *Perm) Verify() {
 	}
 
 	if p.IsExpire {
-		p.Log.Warn("[PERM] authorized signature has expired")
+		p.Log.Warn("[PERM] activation code has expired")
 	}
 
 	if ok && !p.IsExpire {
-		p.Log.Infof("[PERM] permissions key -> %s [verified]", p.ID)
+		p.Log.Infof("[PERM] permissions key -> %s [verified]", p.MID)
 		return
 	}
 
-	p.Log.Warnf("[PERM] permissions key -> %s [unverified]", p.ID)
+	p.Log.Warnf("[PERM] permissions key -> %s [unverified]", p.MID)
 	p.Log.Warn("[PERM] oops, you don't have permission. plz contact the developer (⑉･̆-･̆⑉)")
+
+	p.Log.Info("[PERM] enter your activation code")
+	fmt.Print("Activation code: ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	url := fmt.Sprintf("%s/use/%s/%s?desc=%s", p.CheckSource, scanner.Text(), p.MID, p.AppId)
+	var res RequestResult1
+	_, _ = RequestJson(RequestOptions{Url: url}, &res)
+	if res.Data == "auth succeed" {
+		p.Log.Warn("[PERM] activation code has been successfully bound to the device")
+		return
+	} else {
+		p.Log.Warn("[PERM] activation code error")
+	}
 	exitOops()
+}
+
+type RequestResult1 struct {
+	Total   int         `json:"total"`
+	Data    interface{} `json:"data"`
+	Code    int         `json:"code"`
+	Message string      `json:"msg"`
 }
 
 func exitOops() {
@@ -102,7 +127,7 @@ type RequestResult struct {
 }
 
 func (p *Perm) TransportPerm() (bool, error) {
-	url := fmt.Sprintf("%s/verify/%s", p.CheckSource, p.ID)
+	url := fmt.Sprintf("%s/verify/%s", p.CheckSource, p.MID)
 
 	pair, err := CreatePair()
 	if err != nil {
@@ -152,6 +177,7 @@ func (p *Perm) TransportPerm() (bool, error) {
 		fit -= 28800 * 1000
 	}
 	p.IsExpire = fit < it
+	p.Log.Infof("[PERM] current subscription is active until %s", sign.Time.Add(p.ExpireAfter).Format("2006-01-02 15:04:05"))
 	return fit > it, nil
 }
 
