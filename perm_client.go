@@ -16,12 +16,15 @@ import (
 
 type Perm struct {
 	PermOptions
+	ID       string
+	IsExpire bool
 }
 
 type PermOptions struct {
 	Log         *logrus.Logger
 	CheckSource string
 	AppId       string
+	ExpireAfter time.Duration
 }
 
 func InitPermClient(opt PermOptions) *Perm {
@@ -34,26 +37,31 @@ func InitPermClient(opt PermOptions) *Perm {
 		perm.Log.Warn("[PERM] check source not set")
 	}
 	if opt.AppId == "" {
-		perm.Log.Warn("[PERM] appid not set")
+		perm.AppId = "acd3f8c51a"
+		perm.Log.WithField("default", perm.AppId).Warn("[PERM] appid not set")
+
 	}
 	perm.Log.Info("[PERM] plugins loaded")
+	perm.ID = GetID(perm.AppId)
 	return &perm
 }
 
-func (p *Perm) Confirm() {
-	id := GetID(p.AppId)
-
-	ok, err := TransportPerm(fmt.Sprintf("%s/verify/%s", p.CheckSource, id))
+func (p *Perm) Verify() {
+	ok, err := p.TransportPerm()
 	if err != nil {
 		p.Log.WithField("err", err.Error()).Error("[PERM] some error happened, plz report it to the developer, thanks!")
 	}
 
-	if ok {
-		p.Log.Infof("[PERM] permissions key -> %s [verified]", id)
+	if p.IsExpire {
+		p.Log.Warn("[PERM] authorized signature has expired")
+	}
+
+	if ok && !p.IsExpire {
+		p.Log.Infof("[PERM] permissions key -> %s [verified]", p.ID)
 		return
 	}
 
-	p.Log.Warnf("[PERM] permissions key -> %s [unverified]", id)
+	p.Log.Warnf("[PERM] permissions key -> %s [unverified]", p.ID)
 	p.Log.Warn("[PERM] oops, you don't have permission. plz contact the developer (⑉･̆-･̆⑉)")
 	exitOops()
 }
@@ -93,7 +101,9 @@ type RequestResult struct {
 	Message string       `json:"msg"`
 }
 
-func TransportPerm(url string) (bool, error) {
+func (p *Perm) TransportPerm() (bool, error) {
+	url := fmt.Sprintf("%s/verify/%s", p.CheckSource, p.ID)
+
 	pair, err := CreatePair()
 	if err != nil {
 		return false, errors.New("create pair failed")
@@ -119,5 +129,33 @@ func TransportPerm(url string) (bool, error) {
 	if err != nil {
 		return false, errors.New("decrypt failed")
 	}
-	return string(d) == "!*#34787894@qq.com#*b41b4af78240ae375a4cb0b95932ffc3", nil
+
+	if string(d) == "!*#r3inbowari@gmail.com#*b41b4af78240ae375a4cb0b95932ffc3" {
+		return false, nil
+	}
+
+	var sign Sign
+	err = json.Unmarshal(d, &sign)
+	if err != nil {
+		return false, err
+	}
+
+	networkTime := GetTime()
+	it, err := strconv.ParseInt(networkTime.Data.T, 10, 64)
+	if err != nil {
+		return false, err
+	}
+
+	fit := sign.Time.Add(p.ExpireAfter).UnixMilli()
+	if sign.Time.Location().String() == "UTC" {
+		// aliyun fc 默认使用utc时间
+		fit -= 28800 * 1000
+	}
+	p.IsExpire = fit < it
+	return fit > it, nil
+}
+
+type Sign struct {
+	Time   time.Time // 生成时间
+	Random string    // 随机数
 }
